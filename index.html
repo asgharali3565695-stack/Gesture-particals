@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Gesture Controlled 3D Particles</title>
+
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: black;
+    touch-action: none;
+  }
+
+  canvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+  }
+
+  video {
+    display: none;
+  }
+
+  .hint {
+    position: fixed;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #fff;
+    font-family: system-ui, sans-serif;
+    font-size: 13px;
+    opacity: 0.8;
+    text-align: center;
+  }
+</style>
+</head>
+
+<body>
+
+<video id="video" autoplay playsinline></video>
+<canvas id="three"></canvas>
+
+<div class="hint">
+  ✋ Open hand = expand & color <br>
+  🤏 Pinch = change shape
+</div>
+
+<!-- Three.js -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
+
+<!-- MediaPipe -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+<script>
+/* =========================
+   THREE.JS SETUP
+========================= */
+
+const canvas = document.getElementById("three");
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(
+  70,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  1000
+);
+camera.position.z = 4;
+
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  alpha: true,
+  antialias: true
+});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+/* =========================
+   PARTICLES
+========================= */
+
+const COUNT = 4000;
+const positions = new Float32Array(COUNT * 3);
+
+for (let i = 0; i < positions.length; i++) {
+  positions[i] = (Math.random() - 0.5) * 2;
+}
+
+const geometry = new THREE.BufferGeometry();
+geometry.setAttribute("position",
+  new THREE.BufferAttribute(positions, 3)
+);
+
+const material = new THREE.PointsMaterial({
+  size: 0.025,
+  color: 0xff4f9a
+});
+
+const particles = new THREE.Points(geometry, material);
+scene.add(particles);
+
+let scaleTarget = 1;
+
+/* =========================
+   SHAPES
+========================= */
+
+function heartShape() {
+  const p = geometry.attributes.position.array;
+  for (let i = 0; i < p.length; i += 3) {
+    const t = Math.random() * Math.PI * 2;
+    p[i]     = 0.16 * Math.pow(Math.sin(t), 3);
+    p[i + 1] =
+      0.13 * Math.cos(t)
+      - 0.05 * Math.cos(2 * t)
+      - 0.02 * Math.cos(3 * t);
+    p[i + 2] = (Math.random() - 0.5) * 0.3;
+  }
+  geometry.attributes.position.needsUpdate = true;
+}
+
+function saturnShape() {
+  const p = geometry.attributes.position.array;
+  for (let i = 0; i < p.length; i += 3) {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random();
+    p[i]     = Math.cos(a) * r;
+    p[i + 1] = (Math.random() - 0.5) * 0.2;
+    p[i + 2] = Math.sin(a) * r;
+  }
+  geometry.attributes.position.needsUpdate = true;
+}
+
+/* =========================
+   ANIMATION
+========================= */
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  particles.rotation.y += 0.002;
+  particles.rotation.x += 0.001;
+
+  particles.scale.lerp(
+    new THREE.Vector3(scaleTarget, scaleTarget, scaleTarget),
+    0.08
+  );
+
+  renderer.render(scene, camera);
+}
+animate();
+
+/* =========================
+   HAND TRACKING
+========================= */
+
+const video = document.getElementById("video");
+
+const hands = new Hands({
+  locateFile: file =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+});
+
+hands.setOptions({
+  maxNumHands: 1,
+  minDetectionConfidence: 0.7,
+  minTrackingConfidence: 0.7
+});
+
+hands.onResults(results => {
+  if (!results.multiHandLandmarks.length) return;
+
+  const hand = results.multiHandLandmarks[0];
+  const thumb = hand[4];
+  const index = hand[8];
+
+  const dist = Math.hypot(
+    thumb.x - index.x,
+    thumb.y - index.y
+  );
+
+  // Expand / Contract
+  scaleTarget = THREE.MathUtils.clamp(dist * 8, 0.6, 3);
+
+  // Color
+  material.color.set(
+    dist > 0.09 ? 0x00ffff : 0xff4f9a
+  );
+
+  // Shape switch
+  if (dist < 0.045) heartShape();
+  if (dist > 0.12) saturnShape();
+});
+
+const cam = new Camera(video, {
+  onFrame: async () => {
+    await hands.send({ image: video });
+  },
+  width: 640,
+  height: 480
+});
+cam.start();
+
+/* =========================
+   RESPONSIVE
+========================= */
+
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+
+</body>
+</html>
